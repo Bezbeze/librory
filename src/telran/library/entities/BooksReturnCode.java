@@ -1,0 +1,7 @@
+package telran.library.entities;
+
+public enum BooksReturnCode
+{
+	OK, BOOK_ITEM_EXISTS, PICK_PERIOD_GREATER_MAX, PICK_PERIOD_LESS_MIN, READER_EXISTS, 
+	NO_BOOK_ITEM, NO_BOOK_EXEMPLARS, NO_READER, READER_READS_IT
+}
