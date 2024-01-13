@@ -9,6 +9,7 @@ import telran.library.entities.Book;
 import telran.library.entities.BooksReturnCode;
 import telran.library.entities.PickRecord;
 import telran.library.entities.Reader;
+import telran.library.entities.ReaderDelay;
 
 public interface ILibrary extends Serializable
 {
@@ -30,5 +31,15 @@ public interface ILibrary extends Serializable
 	RemovedBookData removeBook(long isbn); //wrong id = null, inuse =>amount -1
 	List<RemovedBookData> removeAuthor(String author);// wrong name=>emty list
 	RemovedBookData returnBook(long isbn, int readertId, LocalDate returnDate);
+	
+//  Sprint4
+	
+	List<ReaderDelay> getReadersDelayingBooks(LocalDate currentDate);
+	//readers ordered by total delay on current date(they haven't returned yet)
+	List<ReaderDelay> getReadersDelayedBooks();
+	//readers ordered by total delay of all returned book(they returnd but with a delay)
+	List<Book> getMostPopularBooks(LocalDate fromDate, LocalDate toDate, int fromAge, int toAge);
+	List<String> getMostPopularAuthor();
+	List<Reader> getMostActiveReaders(LocalDate fromDate, LocalDate toDate);
 	
 }

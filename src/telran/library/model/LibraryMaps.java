@@ -5,16 +5,21 @@ import telran.library.entities.Book;
 import telran.library.entities.BooksReturnCode;
 import telran.library.entities.PickRecord;
 import telran.library.entities.Reader;
+import telran.library.entities.ReaderDelay;
 import telran.utils.Persistable;
 
 import java.io.*;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 @SuppressWarnings("serial")
 public class LibraryMaps extends AbstractLibrary implements Persistable {
@@ -126,8 +131,8 @@ public class LibraryMaps extends AbstractLibrary implements Persistable {
 	@Override
 	public List<Book> getBooksAuthor(String authorName) {
 		List<Book> res = authorBooks.getOrDefault(authorName, new ArrayList<>());
-	//	return res.stream().filter(b -> b.getAmount() > b.getAmountInUse()).toList();
-		return res.stream().filter(b ->( b.getAmount() > b.getAmountInUse()|| b.getAmount()==-1)).toList();
+		// return res.stream().filter(b -> b.getAmount() > b.getAmountInUse()).toList();
+		return res.stream().filter(b -> (b.getAmount() > b.getAmountInUse() || b.getAmount() == -1)).toList();
 	}
 
 	@Override
@@ -149,7 +154,7 @@ public class LibraryMaps extends AbstractLibrary implements Persistable {
 
 	private RemovedBookData realRemovedBook(Book book) { // !!!!only for book.getAmountInUse == 0;
 
-		if (book.getAmountInUse() != 0 || bookRecords == null) 			
+		if (book.getAmountInUse() != 0 || bookRecords == null)
 			return null;
 
 		String authorBook = book.getAuthor();
@@ -162,10 +167,10 @@ public class LibraryMaps extends AbstractLibrary implements Persistable {
 
 		authorBooks.get(authorBook).remove(book);
 		books.remove(book.getIsbn());
-	
+
 		if (getBooksAuthor(authorBook).isEmpty())
 			authorBooks.remove(authorBook);
-		
+
 		return new RemovedBookData(book, listRecord);
 	}
 
@@ -174,7 +179,7 @@ public class LibraryMaps extends AbstractLibrary implements Persistable {
 		List<Book> listBooks = getBooksAuthor(author);
 		if (listBooks == null)
 			return new ArrayList<RemovedBookData>();
-			
+
 		List<RemovedBookData> res = listBooks.stream().map(b -> removeBook(b.getIsbn())).toList();
 
 		return res;
@@ -183,14 +188,91 @@ public class LibraryMaps extends AbstractLibrary implements Persistable {
 	@Override
 	public RemovedBookData returnBook(long isbn, int readertId, LocalDate returnDate) {
 		Book book = getBookItem(isbn);
-		if(book == null)
+		if (book == null)
 			return null;
 		book.setAmountInUse(book.getAmountInUse() - 1);
 		PickRecord record = bookRecords.get(isbn).stream()
-				.filter(pr -> (pr.getReaderId() == readertId && pr.getReturnDate() == null)).findFirst().orElse(null);
-		if (record == null) 			
+				.filter(pr -> (pr.getIsbn() == isbn && pr.getReaderId() == readertId && pr.getReturnDate() == null)).findFirst().orElse(null);
+		if (record == null)
 			return null;
-		record.setReturnDate(returnDate);	
+		record.setReturnDate(returnDate);
+		int days = ((int) ChronoUnit.DAYS.between(record.getPickDate(), returnDate)) - book.getPickPeriod();
+		if (days > 0)
+			record.setDelayDays(days);
 		return book.getAmount() == -1 ? realRemovedBook(book) : new RemovedBookData(book, null);
+	}
+
+	// Sprint 4
+
+	@Override
+	public List<ReaderDelay> getReadersDelayingBooks(LocalDate currentDate) {
+		List<ReaderDelay> delayingBooks = records.headMap(currentDate, true).values().stream()
+				.flatMap(list -> list.stream())
+				.filter(pr -> pr.getReturnDate() == null
+						&& pr.getPickDate().plusDays(getBookItem(pr.getIsbn()).getPickPeriod()).isBefore(currentDate))
+				.map(pr -> new ReaderDelay(getReader(pr.getReaderId()),
+						(int) ChronoUnit.DAYS.between(pr.getPickDate().plusDays(getBookItem(pr.getIsbn()).getPickPeriod()), currentDate)))
+				.collect(Collectors.toList());
+		delayingBooks.sort(Comparator.comparing(ReaderDelay::getDelay).reversed());
+		return delayingBooks;
+	}
+
+	@Override
+	public List<ReaderDelay> getReadersDelayedBooks() {
+		Map<Integer, Integer> delayingBooks = records.headMap(LocalDate.now().minusDays(minPickPeriod), true).values()
+				.stream().flatMap(listPR -> listPR.stream()).filter(pr -> pr.getDelayDays() > 0)
+				.collect(Collectors.groupingBy(pr -> pr.getReaderId(), Collectors.summingInt(pr -> pr.getDelayDays())));
+		List<ReaderDelay> res = delayingBooks.entrySet().stream()
+				.map(en -> new ReaderDelay(getReader(en.getKey()), en.getValue())).collect(Collectors.toList());
+		res.sort(Comparator.comparing(ReaderDelay::getDelay).reversed());
+		return res;
+	}
+
+	@Override
+	public List<Book> getMostPopularBooks(LocalDate fromDate, LocalDate toDate, int fromAge, int toAge) {
+		Map<Book, Long> map = records.subMap(fromDate, toDate).values().stream().flatMap(list -> list.stream())
+				.filter(pr -> isProperAge(pr, fromAge, toAge))
+				.collect(Collectors.groupingBy(pr -> getBookItem(pr.getIsbn()), Collectors.counting()));
+		long max = Collections.max(map.values());
+		List<Book> res = new ArrayList<Book>();
+		map.forEach((k, v) -> {
+			if (v == max)
+				res.add(k);
+		});
+		return res;
+	}
+
+	private boolean isProperAge(PickRecord pr, int fromAge, int toAge) {
+		Reader reader = getReader(pr.getReaderId());
+		int age = (int) ChronoUnit.YEARS.between(reader.getBirthData(), pr.getPickDate());
+		return age >= fromAge && age <= toAge;
+	}
+
+	@Override
+	public List<String> getMostPopularAuthor() {
+		Map<String, Long> map = bookRecords.entrySet().stream()
+				.collect(Collectors.groupingBy(en -> getBookItem(en.getKey()).getAuthor(), Collectors.counting()));
+		long max = Collections.max(map.values());
+		List<String> res = new ArrayList<String>();
+		map.forEach((k, v) -> {
+			if (v == max)
+				res.add(k);
+		});
+
+		return res;
+	}
+
+
+	@Override
+	public List<Reader> getMostActiveReaders(LocalDate fromDate, LocalDate toDate) {
+
+		long max = readerRecords.values().stream().mapToInt(lr -> lr.size()).max().getAsInt();
+		List<Reader> res = new ArrayList<>();
+		readerRecords.forEach((k, v) -> {
+			if (v.size() == max)
+				res.add(getReader(k));
+		});
+
+		return res;
 	}
 }
