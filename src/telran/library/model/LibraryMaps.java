@@ -175,7 +175,7 @@ public class LibraryMaps extends AbstractLibrary implements Persistable {
 	}
 
 	@Override
-	public List<RemovedBookData> removeAuthor(String author) { // !!!!!!!!!!!
+	public List<RemovedBookData> removeAuthor(String author) {
 		List<Book> listBooks = getBooksAuthor(author);
 		if (listBooks == null)
 			return new ArrayList<RemovedBookData>();
@@ -266,10 +266,12 @@ public class LibraryMaps extends AbstractLibrary implements Persistable {
 	@Override
 	public List<Reader> getMostActiveReaders(LocalDate fromDate, LocalDate toDate) {
 
-		long max = readerRecords.values().stream().mapToInt(lr -> lr.size()).max().getAsInt();
+		Map<Integer, Long> map = getPickedRecordsAtDates(fromDate, toDate).stream()
+				.collect(Collectors.groupingBy(r->r.getReaderId(), Collectors.counting()));
+		long max = Collections.max(map.values());
 		List<Reader> res = new ArrayList<>();
-		readerRecords.forEach((k, v) -> {
-			if (v.size() == max)
+		map.forEach((k, v) -> {
+			if (v == max)
 				res.add(getReader(k));
 		});
 
